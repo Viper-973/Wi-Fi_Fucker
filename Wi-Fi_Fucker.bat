@@ -244,8 +244,8 @@ if errorlevel 1 (
 
 echo.
 echo    [INFO] Checking for old profiles...
-del /q "Profiles" >nul 2>&1
-if not exist "Profiles" mkdir "Profiles"
+del /q "profiles" >nul 2>&1
+if not exist "profiles" mkdir "profiles"
 
 if not exist "%WordlistPath%" (
     echo    [ERROR] The wordlist file does not exist or the path is invalid.
@@ -349,9 +349,9 @@ set "SSID_escaped=%SSID_escaped:"=&quot;%"
     echo         ^<enableRandomization^>false^</enableRandomization^>
     echo     ^</MacRandomization^>
     echo ^</WLANProfile^>
-) > Profiles\%batch%.xml
+) > profiles\%batch%.xml
 
-netsh wlan add profile filename="Profiles\%batch%.xml" user=current interface="%interface%" >nul
+netsh wlan add profile filename="profiles\%batch%.xml" user=current interface="%interface%" >nul
 
 netsh wlan connect name="%SSID%" >nul
 ping 127.0.0.1 -n 7 >nul
@@ -378,5 +378,5 @@ goto return
 
 :delete
 setlocal
-powershell -Command "Remove-Item -Path 'Profiles\%batch%.xml' -Force"
+powershell -Command "Remove-Item -Path 'profiles\%batch%.xml' -Force"
 endlocal
