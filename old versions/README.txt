@@ -1,0 +1,1 @@
+These are old versions of Wi-Fi_Fucker some might not work use the .bat file in the Wi-Fi_Fucker directory for best experience.

